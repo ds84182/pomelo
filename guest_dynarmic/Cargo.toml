@@ -1,0 +1,10 @@
+[package]
+name = "pomelo_guest_dynarmic"
+version = "0.1.0"
+authors = ["Dwayne Slater <ds84182@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+dynarmic = { git = "https://github.com/ds84182/dynarmic-rs" }
+pomelo_guest = { path = "../guest" }
+byteorder = "1.3"

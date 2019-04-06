@@ -99,6 +99,6 @@ pub enum SvcResult {
 pub trait SvcHandler {
     type KernelContext;
     type KernelResume;
-    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: M, kctx: &mut Self::KernelContext) -> SvcResult;
-    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: M, kctx: &mut Self::KernelContext);
+    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext) -> SvcResult;
+    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext);
 }

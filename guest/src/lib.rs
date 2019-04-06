@@ -175,12 +175,12 @@ impl SvcHandler for ProcessSvcHandler {
     type KernelContext = kernel::Kernel;
     type KernelResume = kernel::ThreadResume;
 
-    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: M, kctx: &mut kernel::Kernel) -> SvcResult {
+    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: &M, kctx: &mut kernel::Kernel) -> SvcResult {
         handle_svc(regs, tls, mem, kctx)
     }
 
-    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: M, kctx: &mut Self::KernelContext) {
-        let svc = get_svc(regs, &mem);
+    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext) {
+        let svc = get_svc(regs, mem);
 
         match svc {
             0x4F => {
@@ -243,8 +243,8 @@ fn make_timeout(timeout_low: u32, timeout_high: u32) -> kernel::Timeout {
     }
 }
 
-fn handle_svc(regs: &mut impl Regs, tls: u32, mem: impl MemoryMap, kctx: &mut kernel::Kernel) -> SvcResult {
-    let svc = get_svc(regs, &mem);
+fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut kernel::Kernel) -> SvcResult {
+    let svc = get_svc(regs, mem);
 
     let mut result = SvcResult::Continue;
 

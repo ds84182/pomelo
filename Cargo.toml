@@ -2,5 +2,6 @@
 members = [
     "kernel",
     "guest",
-    "hle"
+    "hle",
+    "guest_dynarmic"
 ]
