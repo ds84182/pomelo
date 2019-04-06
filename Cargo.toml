@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "kernel",
+    "guest",
+    "hle"
+]

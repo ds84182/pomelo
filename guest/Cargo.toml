@@ -1,0 +1,10 @@
+[package]
+name = "pomelo_guest"
+version = "0.1.0"
+authors = ["Dwayne Slater <ds84182@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+pomelo_kernel = { path = "../kernel" }
+pomelo_hle = { path = "../hle" }
+byteorder = "1.3"
