@@ -1,0 +1,13 @@
+[package]
+name = "pomelo_cli"
+version = "0.1.0"
+authors = ["Dwayne Slater <ds84182@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+pomelo_kernel = { path = "../kernel" }
+pomelo_guest = { path = "../guest" }
+pomelo_guest_dynarmic = { path = "../guest_dynarmic" }
+pomelo_hle = { path = "../hle" }
+pomelo_formats = { path = "../formats" }
+byteorder = { version = "1.3" }

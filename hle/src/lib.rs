@@ -6,6 +6,7 @@
 use ::pomelo_kernel as kernel;
 
 mod arbiter;
+mod codeset;
 mod event;
 mod port;
 mod session;
@@ -18,3 +19,18 @@ pub mod service;
 pub use self::port::*;
 pub use self::session::*;
 pub use self::thread::*;
+pub use self::codeset::LLECodeSetSection;
+
+pub struct HLEHooks {}
+
+impl HLEHooks {
+    pub fn new() -> Box<kernel::HLEHooks> {
+        Box::new(HLEHooks { })
+    }
+}
+
+impl kernel::HLEHooks for HLEHooks {
+    fn make_hle_thread_object(&mut self, tid: kernel::ThreadIndex, obj_man: &mut kernel::ObjectManager) -> kernel::KTypedObject<kernel::KThread> {
+        kernel::KTypedObject::cast(obj_man.new_object_typed(ThreadImpl::new(tid))).unwrap()
+    }
+}

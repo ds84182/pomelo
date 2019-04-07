@@ -2,7 +2,7 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use std::{cell::RefCell, rc::Rc};
 
-const USERLAND_STACK_BASE: u32 = 0x10000000;
+pub const USERLAND_STACK_BASE: u32 = 0x10000000;
 const USERLAND_TLS_BASE: u32 = 0x1FF82000;
 
 const STACK_SIZE: u32 = 0x00002000;
@@ -18,7 +18,7 @@ use kernel::{HandleImpl, ThreadWaitType};
 
 use kernel::object::*;
 
-struct ThreadContext<G: GuestContext, M: MemoryMap> {
+pub struct ThreadContext<G: GuestContext, M: MemoryMap> {
     tls: u32,
     ctx: RefCell<G::SavedContext>,
     guest: Rc<RefCell<G>>,
@@ -118,10 +118,10 @@ impl<G: GuestContext<SvcHandler=impl SvcHandler<KernelContext=kernel::Kernel, Ke
 }
 
 impl<G: GuestContext + 'static, M: MemoryMap> ProcessContext<G, M> {
-    pub fn new(guest: &Rc<RefCell<G>>, memory_map: M) -> Self {
+    pub fn new(guest: &Rc<RefCell<G>>, memory_map: Rc<M>) -> Self {
         ProcessContext {
             guest: Rc::clone(&guest),
-            memory: Rc::new(memory_map),
+            memory: memory_map,
             tls: RefCell::new(ProcessTLS::new()),
         }
     }
@@ -144,7 +144,7 @@ impl<G: GuestContext + 'static, M: MemoryMap> ProcessContext<G, M> {
         (USERLAND_TLS_BASE as u32) + ((tls.free.pop().expect("Failed to allocate TLS") as u32) << 9)
     }
 
-    fn new_thread(&self, entrypoint: u32, stack_top: u32, arg: u32) -> ThreadContext<G, M> {
+    pub fn new_thread(&self, entrypoint: u32, stack_top: u32, arg: u32) -> ThreadContext<G, M> {
         let mut thread_context = ThreadContext::new(self.guest.clone(), self.memory.clone());
 
         let tls = self.allocate_tls();

@@ -3,5 +3,7 @@ members = [
     "kernel",
     "guest",
     "hle",
-    "guest_dynarmic"
+    "guest_dynarmic",
+    "formats",
+    "cli"
 ]

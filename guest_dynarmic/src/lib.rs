@@ -134,6 +134,10 @@ impl<'a, S: SvcHandler + 'static> DynarmicGuest<S> {
     pub fn memory_map(&mut self) -> &impl MemoryMap {
         self.mem.as_ref()
     }
+
+    pub fn memory_map_rc(&mut self) -> Rc<impl MemoryMap> {
+        Rc::clone(&self.mem)
+    }
 }
 
 impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
@@ -180,7 +184,13 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
             self.restore(&regs, tls);
         }
 
-        self.executor().run();
+        loop {
+            self.executor().run();
+
+            if self.ctx.ran_svc.get() {
+                break
+            }
+        }
         
         Ok(())
     }
@@ -203,7 +213,9 @@ impl dynarmic::memory::Memory for DynarmicMemory {
 }
 
 impl MemoryMap for DynarmicMemory {
-    fn map(&self, addr: u32, size: u32, _: &str, init: Option<&[u8]>, prot: Protection) {
+    fn map(&self, addr: u32, size: u32, name: &str, init: Option<&[u8]>, prot: Protection) {
+        println!("Mapped {} at {:X} ({:X} bytes)", name, addr, size);
+
         self.0.borrow_mut().map_memory(addr, size >> 12, match prot {
             Protection::ReadOnly => true,
             Protection::ReadExecute => true,

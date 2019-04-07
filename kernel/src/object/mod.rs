@@ -24,6 +24,7 @@ pub struct KObjectVTable {
     addr_arb_vtable: Option<NonNull<()>>,
     event_vtable: Option<NonNull<()>>,
     thread_vtable: Option<NonNull<()>>,
+    codeset_vtable: Option<NonNull<()>>,
 
     debug_vtable: Option<NonNull<()>>,
 }
@@ -44,6 +45,7 @@ pub trait KObjectData: Sized + Debug {
         addr_arb_vtable: <(&dyn KAddressArbiter, Self) as AutoVTableUniversal>::VTABLE,
         event_vtable: <(&dyn KEvent, Self) as AutoVTableUniversal>::VTABLE,
         thread_vtable: <(&dyn KThread, Self) as AutoVTableUniversal>::VTABLE,
+        codeset_vtable: <(&dyn KCodeSet, Self) as AutoVTableUniversal>::VTABLE,
 
         debug_vtable: <(&dyn KObjectDebug, Self) as AutoVTableUniversal>::VTABLE,
     };
@@ -212,3 +214,8 @@ pub trait KThread: KSynchronizationObject {
     fn exit(&self, this: &kernel::KObjectRef, ct: &mut kernel::CommonThreadManager);
 }
 try_into_trait!(thread_vtable, KThread);
+
+pub trait KCodeSet {
+    fn create_process(&self, kctx: &mut kernel::Kernel); // -> kernel::KResult<kernel::Process>;
+}
+try_into_trait!(codeset_vtable, KCodeSet);

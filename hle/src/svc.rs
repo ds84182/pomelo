@@ -1,5 +1,7 @@
 use crate::kernel;
 
+use crate::codeset::LLECodeSetSection;
+
 pub fn create_event(kctx: &mut kernel::Kernel, reset_type: kernel::ResetType) -> kernel::KResult<kernel::Handle> {
     println!("CreateEvent({:?})", reset_type);
 
@@ -248,4 +250,41 @@ pub fn accept_session(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>)
     } else {
         Err(kernel::errors::HANDLE_TYPE_MISMATCH)
     }
+}
+
+#[derive(Debug)]
+pub struct CodeSetInfo<'a> {
+    pub name: &'a str,
+    pub text: LLECodeSetSection,
+    pub rodata: LLECodeSetSection,
+    pub data: LLECodeSetSection,
+    pub bss: u32,
+    pub program_id: u64,
+}
+
+pub fn create_codeset(kctx: &mut kernel::Kernel, info: CodeSetInfo) -> kernel::KResult<kernel::Handle> {
+    println!("CreateCodeset({:?})", info);
+
+    use crate::codeset::LLECodeSetImpl;
+
+    let (_, codeset) = kctx.new_object_handle(LLECodeSetImpl::new(
+        info.text,
+        info.rodata,
+        info.data,
+        info.bss,
+        info.name.to_owned().into(),
+        info.program_id
+    ));
+
+    Ok(codeset)
+}
+
+pub fn create_hle_codeset(kctx: &mut kernel::Kernel, main_thread: crate::ThreadHLE, name: &str) -> kernel::KResult<kernel::Handle> {
+    println!("CreateHLECodeset({})", name);
+
+    use crate::codeset::HLECodeSetImpl;
+
+    let (_, codeset) = kctx.new_object_handle(HLECodeSetImpl::new(main_thread, name.to_owned().into()));
+
+    Ok(codeset)
 }

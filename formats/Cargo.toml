@@ -1,0 +1,10 @@
+[package]
+name = "pomelo_formats"
+version = "0.1.0"
+authors = ["Dwayne Slater <ds84182@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+nom = "4.2.3"
+plain = "0.2.3"
+static_assertions = "0.3.1"

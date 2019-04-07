@@ -260,5 +260,11 @@ impl kernel::KSynchronizationObject for ThreadImpl {
     }
 }
 
+impl kernel::KThread for ThreadImpl {
+    fn exit(&self, this: &kernel::KObjectRef, ct: &mut kernel::CommonThreadManager) {
+        self.on_death(this, ct);
+    }
+}
+
 impl kernel::object::KObjectData for ThreadImpl {}
 impl kernel::object::KObjectDebug for ThreadImpl {}
