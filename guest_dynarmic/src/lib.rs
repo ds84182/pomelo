@@ -5,7 +5,7 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::cell::{Cell, RefCell, RefMut};
 use std::rc::Rc;
 
-use dynarmic::{Executor, JitContext, memory::MemoryImpl};
+use dynarmic::{Executor, JitContext, memory::MemoryImpl, coproc};
 
 pub struct ThreadRegs {
     cpsr: u32,
@@ -41,7 +41,8 @@ impl SavedGuestContext for ThreadRegs {
 struct ServiceContext<S: SvcHandler> {
     kctx: Cell<Option<*mut S::KernelContext>>,
     svc_handler: S,
-    ran_svc: Cell<bool>
+    ran_svc: Cell<bool>,
+    tls: Cell<u32>,
 }
 
 struct DynarmicHandlers<S: SvcHandler> {
@@ -65,7 +66,7 @@ impl<S: SvcHandler> dynarmic::Handlers for DynarmicHandlers<S> {
         regs.regs = *context.regs();
         regs.ext_regs = *context.extregs();
 
-        let tls: u32 = 0; // TODO: TLS
+        let tls = ctx.tls.get();
         let kctx = unsafe { &mut *ctx.kctx.get().unwrap() };
         let svc_handler = &ctx.svc_handler;
         let result = svc_handler.handle(&mut regs, tls, self.mem.as_ref(), kctx);
@@ -82,6 +83,16 @@ impl<S: SvcHandler> dynarmic::Handlers for DynarmicHandlers<S> {
         context.set_cpsr(regs.cpsr);
         *context.regs_mut() = regs.regs;
         *context.extregs_mut() = regs.ext_regs;
+    }
+
+    fn make_coprocessors<'jit>(&'jit mut self) -> Option<[Option<coproc::CoprocessorCallbacks<'jit>>; 16]> {
+        let mut cp: [Option<coproc::CoprocessorCallbacks<'jit>>; 16] = Default::default();
+
+        cp[15] = Some(coproc::CoprocessorCallbacks::callbacks_from(Box::new(Cp15 {
+            ctx: Rc::clone(&self.ctx)
+        })));
+
+        Some(cp)
     }
 }
 
@@ -103,6 +114,7 @@ impl<'a, S: SvcHandler + 'static> DynarmicGuest<S> {
             kctx: Default::default(),
             svc_handler,
             ran_svc: Default::default(),
+            tls: Cell::new(0),
         });
 
         let mem = Rc::new(DynarmicMemory(RefCell::new(MemoryImpl::new())));
@@ -161,7 +173,7 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
         ctx.set_cpsr(regs.cpsr);
         *ctx.regs_mut() = regs.regs;
         *ctx.extregs_mut() = regs.ext_regs;
-        // TODO: TLS
+        self.ctx.tls.set(tls);
     }
 
     fn breakpoint(&mut self, addr: u32, thumb: bool) {
@@ -176,13 +188,15 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
 
             self.save(&mut regs);
 
-            let tls: u32 = 0; // TODO: TLS
+            let tls: u32 = self.ctx.tls.get();
 
             let mem = self.mem.as_ref();
             self.ctx.svc_handler.handle_resume(resume, &mut regs, tls, mem, kctx);
 
             self.restore(&regs, tls);
         }
+
+        self.ctx.kctx.set(Some(kctx as *mut _));
 
         loop {
             self.executor().run();
@@ -191,8 +205,20 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
                 break
             }
         }
+
+        self.ctx.kctx.set(None);
         
         Ok(())
+    }
+}
+
+struct Cp15<S: SvcHandler> {
+    ctx: Rc<ServiceContext<S>>,
+}
+
+impl<'jit, S: SvcHandler> coproc::Coprocessor<'jit> for Cp15<S> {
+    fn compile_get_one_word(&'jit self, two: bool, opc1: u32, cr_n: coproc::CoprocReg, cr_m: coproc::CoprocReg, opc2: u32) -> coproc::CallbackOrAccessOneWord<'jit> {
+        coproc::CallbackOrAccess::Access(&self.ctx.tls)
     }
 }
 

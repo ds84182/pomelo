@@ -212,6 +212,38 @@ impl ResetType {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ResLimit {
+    Priority,
+    Commit,
+    Thread,
+    Event,
+    Mutex,
+    Semaphore,
+    Timer,
+    SharedMemory,
+    AddressArbiter,
+    CpuTime,
+}
+
+impl ResLimit {
+    pub fn from_raw(id: u32) -> ResLimit {
+        match id {
+            0 => ResLimit::Priority,
+            1 => ResLimit::Commit,
+            2 => ResLimit::Thread,
+            3 => ResLimit::Event,
+            4 => ResLimit::Mutex,
+            5 => ResLimit::Semaphore,
+            6 => ResLimit::Timer,
+            7 => ResLimit::SharedMemory,
+            8 => ResLimit::AddressArbiter,
+            9 => ResLimit::CpuTime,
+            _ => unreachable!("Unhandled res limit: {:?}", id),
+        }
+    }
+}
+
 pub trait Waker {
     // Returns Ok(()) if wake up successful, Err(()) if the underlying thread has already been woken up
     // Panics if the underlying thread has been woken up and has already resumed (e.g this waker is invalid)
@@ -1039,6 +1071,7 @@ impl Kernel {
     pub fn time(&self) -> u64 { self.clk.time() - self.start_time_ns }
 
     pub fn register_port(&mut self, name: &[u8], port: KTypedObject<KClientPort>) {
+        println!("Registered port: {:?}", name);
         let mut short_name = [0u8; 8];
         short_name[0..(name.len())].copy_from_slice(name);
         self.ports.insert(short_name, port);

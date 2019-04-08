@@ -12,6 +12,7 @@ fn main() {
     );
 
     let (_srv_pid, srv_port) = hle::service::srv::start(&mut kctx);
+    kctx.register_port(b"srv:", srv_port.clone()); // TODO: Register the port inside of srv
 
     let (pid, _) = kctx.new_process("hle_loader".into(), hle::ProcessHLE);
 
@@ -26,9 +27,9 @@ fn main() {
                 let mut exheader = ExHeader::zero();
                 exheader.copy_from_bytes(exheader_bytes);
 
-                let text_size = exheader.sci.text_csi.size_in_bytes as usize;
-                let rodata_size = exheader.sci.rodata_csi.size_in_bytes as usize;
-                let data_size = exheader.sci.data_csi.size_in_bytes as usize;
+                let text_size = (exheader.sci.text_csi.size_in_pages << 12) as usize;
+                let rodata_size = (exheader.sci.rodata_csi.size_in_pages << 12) as usize;
+                let data_size = (exheader.sci.data_csi.size_in_pages << 12) as usize;
 
                 let codeset_info = hle::svc::CodeSetInfo {
                     name: "aobt",
@@ -116,6 +117,9 @@ fn main() {
                     cfg_mem[0x63] = 0x2; // firm_version_maj
                     cfg_mem[0x64] = 0x2; // firm_sys_core_ver
                     LittleEndian::write_u32(&mut cfg_mem[0x68..], 0x0000F297); // firm_ctr_sdk_ver
+
+                    // APPMEMALLOC
+                    LittleEndian::write_u32(&mut cfg_mem[0x40..], 64 * 1024 * 1024);
 
                     memory_map.map(0x1FF80000, 0x1000, "cfg_mem", Some(&cfg_mem), Protection::ReadOnly);
 

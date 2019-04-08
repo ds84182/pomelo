@@ -572,7 +572,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
                 regs.sr(0, (0).into());
             } else {
                 // Result
-                regs.sr(0, kernel::errors::HANDLE_TYPE_MISMATCH.into());
+                //regs.sr(0, kernel::errors::HANDLE_TYPE_MISMATCH.into());
             }
         },
         0x24 => {
@@ -774,6 +774,45 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             // Result
             regs.sr(0, res.into());
         },
+        0x38 => {
+            let handle = regs.r(1).u32();
+            let handle = kernel::Handle::from_raw(handle);
+            println!("GetResourceLimit({:?})", handle);
+
+            // Result
+            regs.sr(0, (0).into());
+            // Handle<KResourceLimits>
+            regs.sr(1, (0).into());
+        },
+        0x3A => {
+            let values = regs.r(0).u32();
+            let handle = regs.r(1).u32();
+            let handle = kernel::Handle::from_raw(handle);
+            let names = regs.r(2).u32();
+            let name_count = regs.r(3).u32();
+            println!("GetResourceLimitCurrentValues({:X}, {:?}, {:X}, {:X})", values, handle, names, name_count);
+
+            for index in 0..name_count {
+                let mut name = [0u8; 4];
+                mem.read(names + (index * 4), &mut name);
+                let name = kernel::ResLimit::from_raw(
+                    LittleEndian::read_u32(&name)
+                );
+
+                println!("Resource limit name: {:?}", name);
+                let value: i64 = match name {
+                    _ => 0,
+                };
+
+                let mut value_out = [0u8; 8];
+                LittleEndian::write_i64(&mut value_out, value);
+
+                mem.write(values + (index * 8), &value_out);
+            }
+
+            // Result
+            regs.sr(0, (-1).into());
+        }
         0x4A => {
             let handle = regs.r(1).u32();
             let handle = kernel::Handle::from_raw(handle);
