@@ -2,12 +2,35 @@ use crate::kernel;
 
 use crate::codeset::LLECodeSetSection;
 
+pub fn create_mutex(kctx: &mut kernel::Kernel) -> kernel::KResult<kernel::Handle> {
+    println!("CreateMutex()");
+
+    let (_, mutex) = kctx.new_object_handle(crate::mutex::MutexImpl::new());
+
+    Ok(mutex)
+}
+
+pub fn release_mutex(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>) -> kernel::KResult<()> {
+    println!("ReleaseMutex({:?})", handle);
+
+    let object = handle.as_ref().and_then(|h| kctx.lookup_handle(h));
+    let mutex: Option<&kernel::KMutex> = object.as_ref().map(|rc| &**rc).and_then(|o| o.into());
+
+    if let (Some(object), Some(mutex)) = (&object, mutex) {
+        mutex.release(object, &mut kctx.threads);
+
+        Ok(())
+    } else {
+        Err(kernel::errors::HANDLE_TYPE_MISMATCH)
+    }
+}
+
 pub fn create_event(kctx: &mut kernel::Kernel, reset_type: kernel::ResetType) -> kernel::KResult<kernel::Handle> {
     println!("CreateEvent({:?})", reset_type);
 
-    let (_, timer) = kctx.new_object_handle(crate::event::EventImpl::new(reset_type));
+    let (_, event) = kctx.new_object_handle(crate::event::EventImpl::new(reset_type));
 
-    Ok(timer)
+    Ok(event)
 }
 
 // TODO: This call may reschedule?

@@ -6,6 +6,9 @@ use ::pomelo_formats as formats;
 use ::pomelo_guest as guest;
 use ::pomelo_guest_dynarmic as guest_dynarmic;
 
+#[macro_use]
+extern crate pomelo_hle;
+
 fn main() {
     let mut kctx = kernel::Kernel::new(
         pomelo_hle::HLEHooks::new()
@@ -13,6 +16,11 @@ fn main() {
 
     let (_srv_pid, srv_port) = hle::service::srv::start(&mut kctx);
     kctx.register_port(b"srv:", srv_port.clone()); // TODO: Register the port inside of srv
+
+    use hle::service::helper::Service;
+
+    AptU.start(&mut kctx);
+    NdmU.start(&mut kctx);
 
     let (pid, _) = kctx.new_process("hle_loader".into(), hle::ProcessHLE);
 
@@ -162,3 +170,88 @@ fn main() {
         kctx.tick();
     }
 }
+
+use kernel::ipc::*;
+
+struct AptU;
+
+impl AptU {
+    async fn handle_ipc<'a>(&'a mut self, ipc: IPCContext<'a>, context: &'a mut hle::HLEContext) {
+        let header = ipc.header();
+        match header {
+            IPCHeaderCode { command_id: 1, normal_parameter_count: 1, translate_parameter_size: 0 } => {
+                let applet_attributes = ipc.request().read_normal();
+
+                println!("APT:GetLockHandle({:X})", applet_attributes);
+
+                // Dummy lock handle
+                let lock = hle::svc::create_mutex(context.kernel()).unwrap();
+
+                let mut res = ipc.response(0);
+                res.write_normal(applet_attributes); // AppletAttr
+                res.write_normal(0); // APT State
+                // Lock Handle
+                res.write_translate(&IPCTranslateParameter::Handle {
+                    moved: true,
+                    calling_process: false,
+                    handles: IPCHandles::Single(Some(lock))
+                });
+            }
+            IPCHeaderCode { command_id: 2, normal_parameter_count: 2, translate_parameter_size: 0 } => {
+                println!("APT:Initialize({:X})", ipc.request().read_normal());
+
+                let notification_event = hle::svc::create_event(context.kernel(), kernel::ResetType::OneShot).unwrap();
+                let resume_event = hle::svc::create_event(context.kernel(), kernel::ResetType::Sticky).unwrap();
+                
+                // Resume the application
+                hle::svc::signal_event(context.kernel(), Some(resume_event.clone())).unwrap();
+
+                let mut res = ipc.response(0);
+                // Notification Event Handle + Resume Event Handle
+                res.write_translate(&IPCTranslateParameter::Handle {
+                    moved: true,
+                    calling_process: false,
+                    handles: IPCHandles::Multiple(vec![
+                        Some(notification_event),
+                        Some(resume_event)
+                    ])
+                });
+            }
+            IPCHeaderCode { command_id: 3, normal_parameter_count: 1, translate_parameter_size: 0 } => {
+                println!("APT:Enable({:X})", ipc.request().read_normal());
+
+                ipc.response(0);
+            }
+            IPCHeaderCode { command_id: 14, normal_parameter_count: 2, translate_parameter_size: 0 } => {
+                let mut req = ipc.request();
+                println!("APT:GlanceParameter({:X}, {:X})", req.read_normal(), req.read_normal());
+
+                panic!("NYI");
+            }
+            IPCHeaderCode { command_id: 67, normal_parameter_count: 1, translate_parameter_size: 0 } => {
+                println!("APT:NotifyToWait({:X})", ipc.request().read_normal());
+
+                ipc.response(0);
+            }
+            _ => unimplemented!("APT:U: {:?}", header)
+        }
+    }
+}
+
+declare_service!(for AptU named ("APT:U") using handle_ipc);
+
+struct NdmU;
+
+impl NdmU {
+    async fn handle_ipc<'a>(&'a mut self, ipc: IPCContext<'a>, context: &'a mut hle::HLEContext) {
+        let header = ipc.header();
+        match header {
+            _ => {
+                println!("ndm:u: {:?} (Stubbed)", header);
+                ipc.response(0);
+            }
+        }
+    }
+}
+
+declare_service!(for NdmU named ("ndm:u") using handle_ipc);

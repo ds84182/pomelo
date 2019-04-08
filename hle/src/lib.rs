@@ -8,12 +8,14 @@ use ::pomelo_kernel as kernel;
 mod arbiter;
 mod codeset;
 mod event;
+mod mutex;
 mod port;
 mod session;
 mod thread;
 mod timer;
 pub mod svc;
 
+#[macro_use]
 pub mod service;
 
 pub use self::port::*;

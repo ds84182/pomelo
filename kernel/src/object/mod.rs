@@ -25,6 +25,7 @@ pub struct KObjectVTable {
     event_vtable: Option<NonNull<()>>,
     thread_vtable: Option<NonNull<()>>,
     codeset_vtable: Option<NonNull<()>>,
+    mutex_vtable: Option<NonNull<()>>,
 
     debug_vtable: Option<NonNull<()>>,
 }
@@ -46,6 +47,7 @@ pub trait KObjectData: Sized + Debug {
         event_vtable: <(&dyn KEvent, Self) as AutoVTableUniversal>::VTABLE,
         thread_vtable: <(&dyn KThread, Self) as AutoVTableUniversal>::VTABLE,
         codeset_vtable: <(&dyn KCodeSet, Self) as AutoVTableUniversal>::VTABLE,
+        mutex_vtable: <(&dyn KMutex, Self) as AutoVTableUniversal>::VTABLE,
 
         debug_vtable: <(&dyn KObjectDebug, Self) as AutoVTableUniversal>::VTABLE,
     };
@@ -219,3 +221,8 @@ pub trait KCodeSet {
     fn create_process(&self, kctx: &mut kernel::Kernel); // -> kernel::KResult<kernel::Process>;
 }
 try_into_trait!(codeset_vtable, KCodeSet);
+
+pub trait KMutex {
+    fn release(&self, this: &kernel::KObjectRef, ct: &mut kernel::CommonThreadManager);
+}
+try_into_trait!(mutex_vtable, KMutex);

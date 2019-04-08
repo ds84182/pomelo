@@ -14,7 +14,20 @@ use std::ops::Deref;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-pub use object::{KObject, KSynchronizationObject, KClientSession, KServerSession, KClientPort, KServerPort, KTimer, KAddressArbiter, KEvent, KThread, IPCData};
+pub use object::{
+    KObject,
+    KSynchronizationObject,
+    KClientSession,
+    KServerSession,
+    KClientPort,
+    KServerPort,
+    KTimer,
+    KAddressArbiter,
+    KEvent,
+    KThread,
+    IPCData,
+    KMutex,
+};
 
 use object_manager::ObjectTable;
 

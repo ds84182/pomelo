@@ -342,6 +342,19 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             kctx.suspend_thread([].iter(), time.absolute(kctx.time()), ThreadWaitType::Sleep); // Put the thread to sleep
             result = SvcResult::Reschedule;
         },
+        0x14 => {
+            let handle = regs.r(0).u32();
+            let handle = kernel::Handle::from_raw(handle);
+            println!("ReleaseMutex({:?})", handle);
+
+            let res = match hle::svc::release_mutex(kctx, handle) {
+                Ok(()) => 0,
+                Err(res) => res
+            };
+
+            // Result
+            regs.sr(0, res.into());
+        },
         0x17 => {
             let event_type = kernel::ResetType::from_raw(regs.r(1).u32() as u32);
             println!("CreateEvent({:?})", event_type);
@@ -352,7 +365,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             };
 
             // Result
-            regs.sr(0, (0).into());
+            regs.sr(0, res.into());
             // Handle<KEvent>
             regs.sr(1, event.into());
         },
@@ -811,7 +824,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             }
 
             // Result
-            regs.sr(0, (-1).into());
+            regs.sr(0, (0).into());
         }
         0x4A => {
             let handle = regs.r(1).u32();
