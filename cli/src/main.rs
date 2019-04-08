@@ -10,6 +10,19 @@ use ::pomelo_guest_dynarmic as guest_dynarmic;
 extern crate pomelo_hle;
 
 fn main() {
+    let fcram = kernel::memory::PhysicalMemory::new(0x08000000 >> 12);
+    let mut physmem = kernel::memory::VirtualMemory::new();
+
+    physmem.map_memory(0x20000000, fcram.slice(), ());
+
+    use kernel::memory::kmm;
+
+    let mut kmm = kmm::KMM::new(&physmem);
+
+    kmm.init_region(kmm::MemoryRegion::App, 0x20000000, 0x04000000 >> 12);
+    kmm.init_region(kmm::MemoryRegion::System, 0x24000000, 0x02C00000 >> 12);
+    kmm.init_region(kmm::MemoryRegion::Base, 0x26C00000, 0x01400000 >> 12);
+
     let mut kctx = kernel::Kernel::new(
         pomelo_hle::HLEHooks::new()
     );

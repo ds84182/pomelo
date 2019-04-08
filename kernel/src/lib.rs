@@ -1,7 +1,10 @@
 // KObject custom trait VTable hack support features
 #![feature(raw, specialization, const_transmute, const_raw_ptr_deref)]
+// Efficient page pointers
+#![feature(rustc_attrs)]
 
 pub mod ipc;
+pub mod memory;
 pub mod object;
 mod object_manager;
 

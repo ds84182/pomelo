@@ -267,7 +267,7 @@ impl<'a> IPCReader<'a> {
                 IPCTranslateParameter::StaticBuffer { index, size, ptr }
             },
             n => {
-                let permission = (n & 3) as u8;
+                let permission = ((n & 0b0110) as u8) >> 1;
                 let size = (descriptor & 0xFFFFFFF0) >> 4;
                 let ptr = self.read_translate_word();
                 IPCTranslateParameter::BufferMapping { permission, size, ptr }
