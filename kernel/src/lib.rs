@@ -1074,7 +1074,10 @@ impl Kernel {
 
                     IPCTranslateParameter::Handle { moved, calling_process, handles }
                 },
-                param => unimplemented!("Translate parameter {:?} not implemented for translation", param)
+                param => {
+                    eprintln!("Translate parameter {:?} not implemented for translation", param);
+                    continue
+                }
             };
 
             writer.write_translate(&translated);

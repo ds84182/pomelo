@@ -222,16 +222,27 @@ impl AptU {
 
                 ipc.response(0);
             }
+            IPCHeaderCode { command_id: 13, normal_parameter_count: 2, translate_parameter_size: 0 } |
             IPCHeaderCode { command_id: 14, normal_parameter_count: 2, translate_parameter_size: 0 } => {
                 let mut req = ipc.request();
                 println!("APT:GlanceParameter({:X}, {:X})", req.read_normal(), req.read_normal());
 
-                panic!("NYI");
+                let mut res = ipc.response(0);
+
+                res.write_normal(0); // Sender AppID
+                res.write_normal(1); // Command (Wakeup)
+                res.write_normal(0); // Actual Parameter Size
+                // TODO: Move handle parameter, static buffer descriptor
             }
             IPCHeaderCode { command_id: 67, normal_parameter_count: 1, translate_parameter_size: 0 } => {
                 println!("APT:NotifyToWait({:X})", ipc.request().read_normal());
 
                 ipc.response(0);
+            }
+            IPCHeaderCode { command_id: 75, normal_parameter_count: 3, translate_parameter_size: 0 } => {
+                println!("APT:AppletUtility({:X})", ipc.request().read_normal());
+
+                ipc.response(0).write_normal(0);
             }
             _ => unimplemented!("APT:U: {:?}", header)
         }
