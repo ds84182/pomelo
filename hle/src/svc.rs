@@ -2,10 +2,10 @@ use crate::kernel;
 
 use crate::codeset::LLECodeSetSection;
 
-pub fn create_mutex(kctx: &mut kernel::Kernel) -> kernel::KResult<kernel::Handle> {
+pub fn create_mutex(kctx: &mut kernel::Kernel, initial_locked: bool) -> kernel::KResult<kernel::Handle> {
     println!("CreateMutex()");
 
-    let (_, mutex) = kctx.new_object_handle(crate::mutex::MutexImpl::new());
+    let (_, mutex) = kctx.new_object_handle(crate::mutex::MutexImpl::new(initial_locked));
 
     Ok(mutex)
 }

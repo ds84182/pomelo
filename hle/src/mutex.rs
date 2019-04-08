@@ -11,9 +11,9 @@ pub struct MutexImpl {
 }
 
 impl MutexImpl {
-    pub fn new() -> MutexImpl {
+    pub fn new(acquired: bool) -> MutexImpl {
         MutexImpl {
-            acquired: Cell::new(false),
+            acquired: Cell::new(acquired),
             waker_queue: RefCell::new(vec![]),
         }
     }

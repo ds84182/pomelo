@@ -342,6 +342,20 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             kctx.suspend_thread([].iter(), time.absolute(kctx.time()), ThreadWaitType::Sleep); // Put the thread to sleep
             result = SvcResult::Reschedule;
         },
+        0x13 => {
+            let initial_locked = regs.r(1).u32();
+            println!("CreateMutex({:?})", initial_locked);
+
+            let (res, event) = match hle::svc::create_mutex(kctx, initial_locked != 0) {
+                Ok(handle) => (0, handle.raw()),
+                Err(res) => (res, 0),
+            };
+
+            // Result
+            regs.sr(0, res.into());
+            // Handle<KMutex>
+            regs.sr(1, event.into());
+        },
         0x14 => {
             let handle = regs.r(0).u32();
             let handle = kernel::Handle::from_raw(handle);

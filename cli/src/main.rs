@@ -21,6 +21,9 @@ fn main() {
 
     AptU.start(&mut kctx);
     NdmU.start(&mut kctx);
+    DSP.start(&mut kctx);
+    CfgU.start(&mut kctx);
+    FsUser.start(&mut kctx);
 
     let (pid, _) = kctx.new_process("hle_loader".into(), hle::ProcessHLE);
 
@@ -185,7 +188,7 @@ impl AptU {
                 println!("APT:GetLockHandle({:X})", applet_attributes);
 
                 // Dummy lock handle
-                let lock = hle::svc::create_mutex(context.kernel()).unwrap();
+                let lock = hle::svc::create_mutex(context.kernel(), false).unwrap();
 
                 let mut res = ipc.response(0);
                 res.write_normal(applet_attributes); // AppletAttr
@@ -266,3 +269,101 @@ impl NdmU {
 }
 
 declare_service!(for NdmU named ("ndm:u") using handle_ipc);
+
+struct DSP;
+
+impl DSP {
+    async fn handle_ipc<'a>(&'a mut self, ipc: IPCContext<'a>, context: &'a mut hle::HLEContext) {
+        let header = ipc.header();
+        match header {
+            _ => {
+                println!("dsp::DSP: {:?} (Stubbed)", header);
+                ipc.response(0);
+            }
+        }
+    }
+}
+
+declare_service!(for DSP named ("dsp::DSP") using handle_ipc);
+
+struct CfgU;
+
+impl CfgU {
+    async fn handle_ipc<'a>(&'a mut self, ipc: IPCContext<'a>, context: &'a mut hle::HLEContext) {
+        let header = ipc.header();
+        match header {
+            IPCHeaderCode { command_id: 1, normal_parameter_count: 2, translate_parameter_size: 0 } => {
+                let mut req = ipc.request();
+                println!("cfg:u:GetConfigInfoBlk2({:X}, {:X}) (Stubbed)", req.read_normal(), req.read_normal());
+
+                ipc.response(0);
+            }
+            _ => {
+                panic!("cfg:u: {:?} (Stubbed)", header);
+            }
+        }
+    }
+}
+
+declare_service!(for CfgU named ("cfg:u") using handle_ipc);
+
+struct FsUser;
+
+impl FsUser {
+    async fn handle_ipc<'a>(&'a mut self, ipc: IPCContext<'a>, context: &'a mut hle::HLEContext) {
+        let header = ipc.header();
+        match header {
+            IPCHeaderCode { command_id: 2145, normal_parameter_count: 1, translate_parameter_size: 2 } => {
+                let mut req = ipc.request();
+                println!("fs:USER:InitializeWithSDKVersion({:X})", req.read_normal());
+
+                ipc.response(0);
+            }
+            IPCHeaderCode { command_id: 2146, normal_parameter_count: 1, translate_parameter_size: 0 } => {
+                let mut req = ipc.request();
+                println!("fs:USER:SetPriority({:X})", req.read_normal());
+
+                ipc.response(0);
+            }
+            IPCHeaderCode { command_id: 2051, normal_parameter_count: 8, translate_parameter_size: 0 } => {
+                let mut req = ipc.request();
+                let (
+                    transaction,
+                    archive_id,
+                    archive_path_type,
+                    archive_path_size,
+                    file_path_type,
+                    file_path_size,
+                    open_flags,
+                    attributes
+                ) = (
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                    req.read_normal(),
+                );
+                println!("fs:USER:OpenFileDirectly({:X}, {:X}, {:X}, {:X}, {:X}, {:X}, {:X}, {:X})",
+                    transaction,
+                    archive_id,
+                    archive_path_type,
+                    archive_path_size,
+                    file_path_type,
+                    file_path_size,
+                    open_flags,
+                    attributes
+                );
+
+                ipc.response(0);
+            }
+            _ => {
+                panic!("fs:USER: {:?} (Stubbed)", header);
+            }
+        }
+    }
+}
+
+declare_service!(for FsUser named ("fs:USER") using handle_ipc);
