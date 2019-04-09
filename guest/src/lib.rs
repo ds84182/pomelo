@@ -14,7 +14,7 @@ mod guest_abstraction;
 
 pub use crate::guest_abstraction::*;
 
-use kernel::{HandleImpl, ThreadWaitType};
+use kernel::{HandleImpl, ThreadWaitType, KernelExt};
 
 use kernel::object::*;
 
@@ -25,7 +25,7 @@ pub struct ThreadContext<G: GuestContext, M: MemoryMap> {
     memory: Rc<M>,
 }
 
-impl<G: GuestContext<SvcHandler=impl SvcHandler<KernelContext=kernel::Kernel, KernelResume=kernel::ThreadResume>>, M: MemoryMap> kernel::Thread for ThreadContext<G, M> {
+impl<G: GuestContext<SvcHandler=impl SvcHandler>, M: MemoryMap> kernel::Thread for ThreadContext<G, M> {
     fn resume(&self, payload: kernel::ThreadResume, kctx: &mut kernel::Kernel) {
         let mut context = self.guest.borrow_mut();
 
@@ -111,7 +111,7 @@ pub struct ProcessContext<G: GuestContext + 'static, M: MemoryMap> {
     tls: RefCell<ProcessTLS>,
 }
 
-impl<G: GuestContext<SvcHandler=impl SvcHandler<KernelContext=kernel::Kernel, KernelResume=kernel::ThreadResume>> + 'static, M: MemoryMap + 'static> kernel::Process for ProcessContext<G, M> {
+impl<G: GuestContext<SvcHandler=impl SvcHandler> + 'static, M: MemoryMap + 'static> kernel::Process for ProcessContext<G, M> {
     fn init_thread(&self, init: kernel::ThreadInitializer) -> Box<kernel::Thread> {
         Box::new(self.new_thread(init.entrypoint, init.stack_top, init.arg))
     }
@@ -172,14 +172,11 @@ fn get_svc(regs: &impl Regs, mem: &impl MemoryMap) -> u32 {
 }
 
 impl SvcHandler for ProcessSvcHandler {
-    type KernelContext = kernel::Kernel;
-    type KernelResume = kernel::ThreadResume;
-
     fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: &M, kctx: &mut kernel::Kernel) -> SvcResult {
         handle_svc(regs, tls, mem, kctx)
     }
 
-    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext) {
+    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: kernel::ThreadResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut kernel::Kernel) {
         let svc = get_svc(regs, mem);
 
         match svc {
@@ -392,7 +389,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
             let event: Option<&KEvent> = object.as_ref().map(|rc| &**rc).and_then(|o| o.into());
 
             if let Some(event) = event {
-                event.signal(object.as_ref().unwrap(), &mut kctx.threads);
+                event.signal(object.as_ref().unwrap(), &mut kctx.threads());
 
                 // Result
                 regs.sr(0, (0).into());
@@ -558,7 +555,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
                         mem.write(addr, &data[..]);
                     },
                     Some(kernel::ArbitrationAction::Signal) => {
-                        arb.signal(object.as_ref().unwrap(), value, addr, &mut kctx.threads);
+                        arb.signal(object.as_ref().unwrap(), value, addr, &mut kctx.threads());
                     },
                     None => ()
                 }
@@ -625,7 +622,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
                 let rc = object.as_ref().unwrap(); // TODO: Elide this clone by changing how wakers are done
                 let waker = kctx.suspend_thread([rc].iter().map(|rc| rc.clone()), time.absolute(kctx.time()), ThreadWaitType::WaitSync1);
 
-                sync.wait(rc, waker, &mut kctx.threads);
+                sync.wait(rc, waker, &mut kctx.threads());
 
                 // Result
                 regs.sr(0, (0).into());
@@ -673,7 +670,7 @@ fn handle_svc(regs: &mut impl Regs, tls: u32, mem: &impl MemoryMap, kctx: &mut k
                 let sync: Option<&KSynchronizationObject> = (&**object).into();
 
                 if let Some(sync) = sync {
-                    sync.wait(object, waker.clone(), &mut kctx.threads);
+                    sync.wait(object, waker.clone(), &mut kctx.threads());
                 } else {
                     // This code path is bugged, disabled:
                     unimplemented!("waitsync with invalid objects");

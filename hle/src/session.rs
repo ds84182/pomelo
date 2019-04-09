@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use crate::kernel;
+use kernel::KernelExt;
 use kernel::object::*;
 
 pub fn make_session_pair(kctx: &mut kernel::Kernel) -> (kernel::KTypedObject<KServerSession>, kernel::KTypedObject<KClientSession>) {
@@ -76,7 +77,7 @@ impl KServerSession for ServerSessionHLE {
         kctx.translate_ipc(this_thread, request_thread, true);
 
         let client = self.client.borrow().upgrade().expect("Client disconnected before reply");
-        client.enqueue_response(client.object(), &mut kctx.threads);
+        client.enqueue_response(client.object(), &mut kctx.threads());
     }
 
     fn on_endpoint_closed(&self) {

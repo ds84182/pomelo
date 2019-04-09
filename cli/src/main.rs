@@ -6,6 +6,8 @@ use ::pomelo_formats as formats;
 use ::pomelo_guest as guest;
 use ::pomelo_guest_dynarmic as guest_dynarmic;
 
+use kernel::{KernelExt, Kernel};
+
 #[macro_use]
 extern crate pomelo_hle;
 
@@ -23,8 +25,9 @@ fn main() {
     kmm.init_region(kmm::MemoryRegion::System, 0x24000000, 0x02C00000 >> 12);
     kmm.init_region(kmm::MemoryRegion::Base, 0x26C00000, 0x01400000 >> 12);
 
-    let mut kctx = kernel::Kernel::new(
-        pomelo_hle::HLEHooks::new()
+    let mut kctx = kernel::KernelImpl::new(
+        pomelo_hle::HLEHooks::new(),
+        kmm,
     );
 
     let (_srv_pid, srv_port) = hle::service::srv::start(&mut kctx);

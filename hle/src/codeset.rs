@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 
 use crate::kernel;
+use kernel::KernelExt;
 use kernel::object::*;
 
 // CodeSet used to spawn HLE threads

@@ -1,6 +1,8 @@
 use std::fmt;
 use std::fmt::Debug;
 
+use crate::kernel::{Kernel, ThreadResume};
+
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub union RegValue {
@@ -79,7 +81,7 @@ pub trait GuestContext {
 
     fn breakpoint(&mut self, addr: u32, thumb: bool);
 
-    fn run(&mut self, resume: <Self::SvcHandler as SvcHandler>::KernelResume, kctx: &mut <Self::SvcHandler as SvcHandler>::KernelContext) -> Result<(), Self::GuestError>;
+    fn run(&mut self, resume: ThreadResume, kctx: &mut Kernel) -> Result<(), Self::GuestError>;
 }
 
 pub trait SavedGuestContext: Regs + 'static {
@@ -97,8 +99,6 @@ pub enum SvcResult {
 }
 
 pub trait SvcHandler {
-    type KernelContext;
-    type KernelResume;
-    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext) -> SvcResult;
-    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: Self::KernelResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut Self::KernelContext);
+    fn handle<R: Regs, M: MemoryMap>(&self, regs: &mut R, tls: u32, mem: &M, kctx: &mut Kernel) -> SvcResult;
+    fn handle_resume<R: Regs, M: MemoryMap>(&self, resume: ThreadResume, regs: &mut R, tls: u32, mem: &M, kctx: &mut Kernel);
 }

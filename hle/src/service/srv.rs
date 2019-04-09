@@ -1,6 +1,7 @@
 use crate::kernel;
 use crate as hle;
 use hle::svc;
+use kernel::KernelExt;
 use kernel::object::*;
 use kernel::ipc::*;
 

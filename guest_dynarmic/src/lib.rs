@@ -7,6 +7,8 @@ use std::rc::Rc;
 
 use dynarmic::{Executor, JitContext, memory::MemoryImpl, coproc};
 
+use ::pomelo_kernel as kernel;
+
 pub struct ThreadRegs {
     cpsr: u32,
     regs: [u32; 16],
@@ -39,7 +41,7 @@ impl SavedGuestContext for ThreadRegs {
 
 #[derive(Default)]
 struct ServiceContext<S: SvcHandler> {
-    kctx: Cell<Option<*mut S::KernelContext>>,
+    kctx: Cell<Option<*mut kernel::Kernel>>,
     svc_handler: S,
     ran_svc: Cell<bool>,
     tls: Cell<u32>,
@@ -180,7 +182,7 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
 
     }
 
-    fn run(&mut self, resume: S::KernelResume, kctx: &mut S::KernelContext) -> Result<(), Self::GuestError> {
+    fn run(&mut self, resume: kernel::ThreadResume, kctx: &mut kernel::Kernel) -> Result<(), Self::GuestError> {
         if self.ctx.ran_svc.replace(false) {
             // Handle SVC resume
 
@@ -196,7 +198,9 @@ impl<S: SvcHandler> GuestContext for DynarmicGuest<S> {
             self.restore(&regs, tls);
         }
 
-        self.ctx.kctx.set(Some(kctx as *mut _));
+        let kctx_static = unsafe { std::mem::transmute::<_, &mut (dyn kernel::Kernel + 'static)>(kctx) };
+
+        self.ctx.kctx.set(Some(kctx_static));
 
         loop {
             self.executor().run();

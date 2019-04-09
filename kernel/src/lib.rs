@@ -745,10 +745,88 @@ pub trait HLEHooks {
     fn make_hle_thread_object(&mut self, tid: ThreadIndex, obj_man: &mut ObjectManager) -> KTypedObject<KThread>;
 }
 
-pub struct Kernel {
+pub trait KernelExt: Kernel {
+    fn new_object<T: KObjectData>(&mut self, data: T) -> KObjectRef {
+        self.objects().new_object(data)
+    }
+
+    fn new_object_typed<T: KObjectData>(&mut self, data: T) -> KTypedObject<T> {
+        self.objects().new_object_typed(data)
+    }
+
+    fn new_object_handle<T: KObjectData>(&mut self, data: T) -> (KObjectRef, Handle) {
+        let obj = self.new_object(data);
+        (obj.clone(), self.current_process().new_handle(obj))
+    }
+
+    fn new_process<'a, T: Process + 'static>(&'a mut self, name: Cow<'static, str>, process: T) -> (ProcessId, Rc<T>) {
+        let process = Rc::<T>::new(process);
+
+        let pid = self.new_process_boxed(name, process.clone());
+
+        (pid, process)
+    }
+
+    fn new_thread(&mut self, pid: ProcessId, thread: impl Thread + 'static) -> (ThreadIndex, KObjectRef) {
+        self.new_thread_boxed(pid, Box::new(thread))
+    }
+
+    fn suspend_thread<'a>(&mut self, objects: impl Iterator<Item=&'a KObjectRef>, timeout: Option<u64>, wait_type: ThreadWaitType) -> Rc<Waker> {
+        let (_, tid) = self.current_pid_tid();
+        let mut thread = self.threads().find_thread_mut(tid);
+
+        thread.wait(objects);
+        thread.wait_timeout = timeout;
+        thread.wait_type = Some(wait_type);
+
+        Rc::new(WakerImpl {
+            thread: thread.index.clone(),
+            key: thread.wake_key,
+        })
+    }
+}
+
+impl<K: Kernel> KernelExt for K {}
+impl<'a> KernelExt for dyn Kernel + 'a {}
+
+pub trait Kernel {
+    fn new_handle(&self, obj: KObjectRef) -> Handle;
+    fn lookup_handle(&self, handle: &Handle) -> Option<KObjectRef>;
+    fn objects(&mut self) -> &mut ObjectManager;
+    fn current_time(&self) -> u64;
+
+    fn threads(&mut self) -> &mut CommonThreadManager;
+
+    fn new_process_boxed(&mut self, name: Cow<'static, str>, process: Rc<Process>) -> ProcessId;
+    fn new_thread_boxed(&mut self, pid: ProcessId, thread: Box<Thread>) -> (ThreadIndex, KObjectRef);
+
+    fn create_thread(&mut self, init: ThreadInitializer) -> (ThreadIndex, Handle);
+    fn next_thread(&self) -> Option<ThreadIndex>;
+    fn schedule_next(&self, thread: ThreadIndex);
+    fn tick_at(&mut self, time: u64);
+    fn tick(&mut self);
+    fn run_next(&mut self);
+    fn find_process(&self, pid: ProcessId) -> &Rc<Process>;
+    fn current_pid_tid(&self) -> (ProcessId, ThreadIndex);
+    fn current_thread(&self) -> CurrentThread;
+    fn current_process(&self) -> CurrentProcess;
+    fn exit_thread(&mut self);
+    fn set_thread_ipc_data(&mut self, data: &IPCData);
+    fn get_thread_ipc_data(&self, data: &mut IPCData);
+    fn translate_ipc(&mut self, src: ThreadIndex, dest: ThreadIndex, reply: bool);
+    fn time(&self) -> u64;
+    fn register_port(&mut self, name: &[u8], port: KTypedObject<KClientPort>);
+    fn lookup_port(&self, name: &[u8]) -> Option<KTypedObject<KClientPort>>;
+    fn bind_interrupt(&mut self, name: u32, event: KTypedObject<KEvent>);
+    fn unbind_interrupt(&mut self, name: u32);
+    fn active_interrupts(&self) -> Arc<ActiveInterrupts>;
+}
+
+pub struct KernelImpl<'mem, M: memory::Memory + 'mem> {
     clk: clocksource::Clocksource,
     pub start_time_ns: u64,
     hle_hooks: Box<HLEHooks>,
+    mem: memory::KMM<'mem, M>,
     objects: ObjectManager,
     processes: CommonProcessManager,
     pub threads: CommonThreadManager,
@@ -761,14 +839,15 @@ pub struct Kernel {
     active_interrupts: Arc<ActiveInterrupts>,
 }
 
-impl Kernel {
-    pub fn new(hle: Box<HLEHooks>) -> Kernel {
+impl<'mem, M: memory::Memory + 'mem> KernelImpl<'mem, M> {
+    pub fn new(hle: Box<HLEHooks>, kmm: memory::KMM<'mem, M>) -> KernelImpl<'mem, M> {
         let clk = clocksource::Clocksource::new();
         let start_time_ns = clk.time();
-        Kernel {
+        KernelImpl {
             clk,
             start_time_ns,
             hle_hooks: hle,
+            mem: kmm,
             objects: ObjectManager::new(),
             processes: CommonProcessManager::new(),
             threads: CommonThreadManager::new(),
@@ -785,134 +864,6 @@ impl Kernel {
         }
     }
 
-    pub fn new_object<T: KObjectData>(&mut self, data: T) -> KObjectRef {
-        self.objects.new_object(data)
-    }
-
-    pub fn new_object_typed<T: KObjectData>(&mut self, data: T) -> KTypedObject<T> {
-        self.objects.new_object_typed(data)
-    }
-
-    pub fn new_handle(&self, obj: KObjectRef) -> Handle {
-        self.current_process().new_handle(obj)
-    }
-
-    pub fn new_object_handle<T: KObjectData>(&mut self, data: T) -> (KObjectRef, Handle) {
-        let obj = self.new_object(data);
-        (obj.clone(), self.current_process().new_handle(obj))
-    }
-
-    pub fn lookup_handle(&self, handle: &Handle) -> Option<KObjectRef> {
-        self.current_process().lookup_handle(handle)
-    }
-
-    pub fn current_time(&self) -> u64 {
-        self.clk.time()
-    }
-
-    pub fn new_process<T: Process + 'static>(&mut self, name: Cow<'static, str>, process: T) -> (ProcessId, Rc<T>) {
-        let pid = self.next_pid.get();
-        self.next_pid.set(pid + 1);
-
-        let process = Rc::new(process);
-
-        self.processes.push(
-            (
-                CommonProcess {
-                    pid: ProcessId(pid),
-                    name,
-                    objects: RefCell::new(ObjectTable::new()),
-                },
-                process.clone()
-            )
-        );
-
-        (ProcessId(pid), process)
-    }
-
-    pub fn new_thread(&mut self, pid: ProcessId, thread: impl Thread + 'static) -> (ThreadIndex, KObjectRef) {
-        self.new_thread_boxed(pid, Box::new(thread))
-    }
-
-    fn new_thread_boxed(&mut self, pid: ProcessId, thread: Box<Thread>) -> (ThreadIndex, KObjectRef) {
-        let tid = self.next_tid.get();
-        self.next_tid.set(tid + 1);
-
-        let thread_kobj = self.hle_hooks.make_hle_thread_object(ThreadIndex(tid as usize), &mut self.objects);
-        let obj = thread_kobj.object().clone();
-
-        self.threads.add(
-            CommonThread::new(pid, ThreadIndex(tid as usize), thread_kobj)
-        );
-
-        self.thread_boxes.borrow_mut().push(
-            (ThreadIndex(tid as usize), Some(thread))
-        );
-
-        (ThreadIndex(tid as usize), obj)
-    }
-
-    pub fn create_thread(&mut self, init: ThreadInitializer) -> (ThreadIndex, Handle) {
-        let (pid, _) = self.current_pid_tid();
-
-        let thread = self.find_process(pid.clone()).init_thread(init);
-
-        let (index, object) = self.new_thread_boxed(pid, thread);
-
-        (index, self.new_handle(object))
-    }
-
-    pub fn next_thread(&self) -> Option<ThreadIndex> {
-        // Finds another thread to execute
-        self.threads.next_thread()
-    }
-
-    pub fn schedule_next(&self, thread: ThreadIndex) {
-        self.exec_info.borrow_mut().next = Some(thread);
-    }
-
-    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
-    pub fn tick_at(&mut self, time: u64) {
-        self.threads.tick_at(time);
-
-        let threads = &mut self.threads;
-        self.objects.for_each_object(|object| {
-            let timer: Option<&KTimer> = (&*object).into();
-            if let Some(timer) = timer {
-                timer.tick(&object, time, threads);
-            }
-        });
-    }
-
-    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
-    pub fn tick(&mut self) {
-        self.tick_at(self.time());
-        let interrupts = &self.interrupts;
-        let threads = &mut self.threads;
-        self.active_interrupts.drain(|interrupt| {
-            if let Some(event) = interrupts.get(&interrupt) {
-                event.signal(event.object(), threads);
-            }
-        });
-    }
-
-    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
-    pub fn run_next(&mut self) {
-        let index = {
-            let mut ei = self.exec_info.borrow_mut();
-            if let Some(next) = ei.next.take() {
-                Some(next)
-            } else {
-                self.next_thread()
-            }
-        };
-
-        match index {
-            Some(index) => self.run_thread(index),
-            None => {},
-        }
-    }
-
     fn take_thread_box(&self, tid: ThreadIndex) -> Box<Thread> {
         let mut r = RefMut::map(self.thread_boxes.borrow_mut(), |threads| threads.iter_mut().find(|(index, _)| *index == tid).map(|(_, thread)| thread).expect("Couldn't find Box<Thread>"));
         r.take().expect("Thread is locked outside, unavailable to kernel. This means we have reentrant thread execution")
@@ -924,10 +875,6 @@ impl Kernel {
             panic!("Replacing thread box when thread is already available to kernel")
         }
         *r = Some(thread);
-    }
-
-    pub fn find_process(&self, pid: ProcessId) -> &Rc<Process> {
-        self.processes.find_process(pid)
     }
 
     fn run_thread(&mut self, mut index: ThreadIndex) {
@@ -957,12 +904,135 @@ impl Kernel {
 
         println!("< Thread {:X} {:?} from {}", index.get(), thread.state, self.processes.find_common_process(thread.pid.clone()).name);
     }
+}
 
-    pub fn current_pid_tid(&self) -> (ProcessId, ThreadIndex) {
+impl<'mem, M: memory::Memory + 'mem> Kernel for KernelImpl<'mem, M> {
+    fn new_handle(&self, obj: KObjectRef) -> Handle {
+        self.current_process().new_handle(obj)
+    }
+
+    fn lookup_handle(&self, handle: &Handle) -> Option<KObjectRef> {
+        self.current_process().lookup_handle(handle)
+    }
+
+    fn objects(&mut self) -> &mut ObjectManager {
+        &mut self.objects
+    }
+
+    fn current_time(&self) -> u64 {
+        self.clk.time()
+    }
+
+    fn threads(&mut self) -> &mut CommonThreadManager {
+        &mut self.threads
+    }
+
+    fn new_process_boxed(&mut self, name: Cow<'static, str>, process: Rc<Process>) -> ProcessId {
+        let pid = self.next_pid.get();
+        self.next_pid.set(pid + 1);
+
+        self.processes.push(
+            (
+                CommonProcess {
+                    pid: ProcessId(pid),
+                    name,
+                    objects: RefCell::new(ObjectTable::new()),
+                },
+                process.clone()
+            )
+        );
+
+        ProcessId(pid)
+    }
+
+    fn new_thread_boxed(&mut self, pid: ProcessId, thread: Box<Thread>) -> (ThreadIndex, KObjectRef) {
+        let tid = self.next_tid.get();
+        self.next_tid.set(tid + 1);
+
+        let thread_kobj = self.hle_hooks.make_hle_thread_object(ThreadIndex(tid as usize), &mut self.objects);
+        let obj = thread_kobj.object().clone();
+
+        self.threads.add(
+            CommonThread::new(pid, ThreadIndex(tid as usize), thread_kobj)
+        );
+
+        self.thread_boxes.borrow_mut().push(
+            (ThreadIndex(tid as usize), Some(thread))
+        );
+
+        (ThreadIndex(tid as usize), obj)
+    }
+
+    fn create_thread(&mut self, init: ThreadInitializer) -> (ThreadIndex, Handle) {
+        let (pid, _) = self.current_pid_tid();
+
+        let thread = self.find_process(pid.clone()).init_thread(init);
+
+        let (index, object) = self.new_thread_boxed(pid, thread);
+
+        (index, self.new_handle(object))
+    }
+
+    fn next_thread(&self) -> Option<ThreadIndex> {
+        // Finds another thread to execute
+        self.threads.next_thread()
+    }
+
+    fn schedule_next(&self, thread: ThreadIndex) {
+        self.exec_info.borrow_mut().next = Some(thread);
+    }
+
+    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
+    fn tick_at(&mut self, time: u64) {
+        self.threads.tick_at(time);
+
+        let threads = &mut self.threads;
+        self.objects.for_each_object(|object| {
+            let timer: Option<&KTimer> = (&*object).into();
+            if let Some(timer) = timer {
+                timer.tick(&object, time, threads);
+            }
+        });
+    }
+
+    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
+    fn tick(&mut self) {
+        self.tick_at(self.time());
+        let interrupts = &self.interrupts;
+        let threads = &mut self.threads;
+        self.active_interrupts.drain(|interrupt| {
+            if let Some(event) = interrupts.get(&interrupt) {
+                event.signal(event.object(), threads);
+            }
+        });
+    }
+
+    // TODO: Only provide this via the "outer" interface for the main loop, want to prevent reentrant calls
+    fn run_next(&mut self) {
+        let index = {
+            let mut ei = self.exec_info.borrow_mut();
+            if let Some(next) = ei.next.take() {
+                Some(next)
+            } else {
+                self.next_thread()
+            }
+        };
+
+        match index {
+            Some(index) => self.run_thread(index),
+            None => {},
+        }
+    }
+
+    fn find_process(&self, pid: ProcessId) -> &Rc<Process> {
+        self.processes.find_process(pid)
+    }
+
+    fn current_pid_tid(&self) -> (ProcessId, ThreadIndex) {
         self.exec_info.borrow().current.clone().expect("No current thread")
     }
 
-    pub fn current_thread(&self) -> CurrentThread {
+    fn current_thread(&self) -> CurrentThread {
         let thread_id = Ref::map(self.exec_info.borrow(), |info| info.current.as_ref().expect("No current thread"));
         let thread = self.threads.find_thread(thread_id.1.clone());
         // let thread_impl = self.find_thread_box(thread_id.1.clone());
@@ -973,7 +1043,7 @@ impl Kernel {
         }
     }
 
-    pub fn current_process(&self) -> CurrentProcess {
+    fn current_process(&self) -> CurrentProcess {
         let pid = Ref::map(self.exec_info.borrow(), |info| &info.current.as_ref().expect("No current process").0);
         let process = self.processes.find_common_process(pid.clone());
         CurrentProcess {
@@ -982,21 +1052,7 @@ impl Kernel {
         }
     }
 
-    pub fn suspend_thread<'a>(&mut self, objects: impl Iterator<Item=&'a KObjectRef>, timeout: Option<u64>, wait_type: ThreadWaitType) -> Rc<Waker> {
-        let (_, tid) = self.current_pid_tid();
-        let mut thread = self.threads.find_thread_mut(tid);
-
-        thread.wait(objects);
-        thread.wait_timeout = timeout;
-        thread.wait_type = Some(wait_type);
-
-        Rc::new(WakerImpl {
-            thread: thread.index.clone(),
-            key: thread.wake_key,
-        })
-    }
-
-    pub fn exit_thread(&mut self) {
+    fn exit_thread(&mut self) {
         let kobj = {
             let (_, tid) = self.current_pid_tid();
             let mut thread = self.threads.find_thread_mut(tid);
@@ -1007,14 +1063,14 @@ impl Kernel {
         kobj.exit(kobj.object(), &mut self.threads);
     }
 
-    pub fn set_thread_ipc_data(&mut self, data: &IPCData) {
+    fn set_thread_ipc_data(&mut self, data: &IPCData) {
         let (_, tid) = self.current_pid_tid();
         let mut thread = self.threads.find_thread_mut(tid);
 
         thread.ipc_data = *data;
     }
 
-    pub fn get_thread_ipc_data(&self, data: &mut IPCData) {
+    fn get_thread_ipc_data(&self, data: &mut IPCData) {
         let (_, tid) = self.current_pid_tid();
         let thread = self.threads.find_thread(tid);
 
@@ -1022,7 +1078,7 @@ impl Kernel {
     }
 
     // Translate IPC data from the current thread to the destination thread's IPC data slot
-    pub fn translate_ipc(&mut self, src: ThreadIndex, dest: ThreadIndex, reply: bool) {
+    fn translate_ipc(&mut self, src: ThreadIndex, dest: ThreadIndex, reply: bool) {
         println!("Translate from {:?} to {:?} (reply? {})", src, dest, reply);
 
         let (src_thread, thread) = self.threads.find_thread_pair_mut((src, dest));
@@ -1061,6 +1117,12 @@ impl Kernel {
             writer.write_normal(reader.read_normal());
         }
 
+        // TODO: Implementing HLE buffers:
+        // Each process will have a list of buffers queried by index
+        // A process can optionally translate a buffer index to an address
+        // HLE processes look up buffers by index (since HLE processes don't have a memory map, this simulates one without going into too much detail)
+        // LLE processes map in the buffers as memory
+
         // Translate only handles for now
         while reader.has_more_translate_params() {
             let translated = match reader.read_translate() {
@@ -1087,31 +1149,31 @@ impl Kernel {
         }
     }
 
-    pub fn time(&self) -> u64 { self.clk.time() - self.start_time_ns }
+    fn time(&self) -> u64 { self.clk.time() - self.start_time_ns }
 
-    pub fn register_port(&mut self, name: &[u8], port: KTypedObject<KClientPort>) {
+    fn register_port(&mut self, name: &[u8], port: KTypedObject<KClientPort>) {
         println!("Registered port: {:?}", name);
         let mut short_name = [0u8; 8];
         short_name[0..(name.len())].copy_from_slice(name);
         self.ports.insert(short_name, port);
     }
 
-    pub fn lookup_port(&self, name: &[u8]) -> Option<KTypedObject<KClientPort>> {
+    fn lookup_port(&self, name: &[u8]) -> Option<KTypedObject<KClientPort>> {
         if name.len() > 8 { return None }
         let mut short_name = [0u8; 8];
         short_name[0..(name.len())].copy_from_slice(name);
         self.ports.get(&short_name).map(|handle| handle.clone())
     }
 
-    pub fn bind_interrupt(&mut self, name: u32, event: KTypedObject<KEvent>) {
+    fn bind_interrupt(&mut self, name: u32, event: KTypedObject<KEvent>) {
         self.interrupts.insert(name, event);
     }
 
-    pub fn unbind_interrupt(&mut self, name: u32) {
+    fn unbind_interrupt(&mut self, name: u32) {
         self.interrupts.remove(&name);
     }
 
-    pub fn active_interrupts(&self) -> Arc<ActiveInterrupts> {
+    fn active_interrupts(&self) -> Arc<ActiveInterrupts> {
         Arc::clone(&self.active_interrupts)
     }
 }

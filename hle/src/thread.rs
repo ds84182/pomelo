@@ -10,6 +10,8 @@ use std::task::Poll;
 
 use crate::{kernel, svc};
 
+use kernel::KernelExt;
+
 pub struct ProcessHLE;
 
 impl kernel::Process for ProcessHLE {}
@@ -20,7 +22,7 @@ struct SharedHLEContext {
 
 // This type should not be moved outside the lifetime of the future spawning closure it is given to.
 pub struct HLEContext {
-    kernel: NonNull<kernel::Kernel>,
+    kernel: NonNull<kernel::Kernel + 'static>,
     shared: NonNull<SharedHLEContext>,
 }
 
@@ -164,10 +166,12 @@ impl kernel::Thread for ThreadHLE {
         use std::mem;
         let current_runtime = mem::replace(&mut *runtime, ThreadRuntime::Indeterminate);
 
+        let kctx_static = unsafe { std::mem::transmute::<_, &mut (dyn kernel::Kernel + 'static)>(kctx) };
+
         let current_runtime = if let ThreadRuntime::Init(func) = current_runtime {
             let future = func(HLEContext {
                 // As long as the kernel given to this function is the same across all future invocations, this is sound.
-                kernel: unsafe { NonNull::new_unchecked(kctx as *mut _) },
+                kernel: unsafe { NonNull::new_unchecked(kctx_static as *mut _) },
                 // We will not drop the Box associated with this until the end of the thread's lifetime, so this is sound.
                 shared: unsafe { NonNull::new_unchecked(shared.as_mut() as *mut _) },
             });
@@ -197,7 +201,7 @@ impl kernel::Thread for ThreadHLE {
         match poll_result {
             Poll::Pending => (),
             Poll::Ready(()) => {
-                kctx.exit_thread();
+                kctx_static.exit_thread();
             }
         }
     }

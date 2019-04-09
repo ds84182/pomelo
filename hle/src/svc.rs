@@ -1,4 +1,5 @@
 use crate::kernel;
+use kernel::KernelExt;
 
 use crate::codeset::LLECodeSetSection;
 
@@ -17,7 +18,7 @@ pub fn release_mutex(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>) 
     let mutex: Option<&kernel::KMutex> = object.as_ref().map(|rc| &**rc).and_then(|o| o.into());
 
     if let (Some(object), Some(mutex)) = (&object, mutex) {
-        mutex.release(object, &mut kctx.threads);
+        mutex.release(object, &mut kctx.threads());
 
         Ok(())
     } else {
@@ -41,7 +42,7 @@ pub fn signal_event(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>) -
     let event: Option<&kernel::KEvent> = object.as_ref().map(|rc| &**rc).and_then(|o| o.into());
 
     if let (Some(object), Some(event)) = (&object, event) {
-        event.signal(object, &mut kctx.threads);
+        event.signal(object, &mut kctx.threads());
 
         Ok(())
     } else {
@@ -108,7 +109,7 @@ pub fn wait_sync_1(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>, ti
         let rc = object.as_ref().unwrap(); // TODO: Elide this clone by changing how wakers are done
         let waker = kctx.suspend_thread([rc].iter().map(|rc| rc.clone()), time.absolute(kctx.time()), kernel::ThreadWaitType::WaitSync1);
 
-        sync.wait(rc, waker, &mut kctx.threads);
+        sync.wait(rc, waker, &mut kctx.threads());
 
         Ok(Some(Reschedule))
     } else {
@@ -142,7 +143,7 @@ pub fn wait_sync_n(kctx: &mut kernel::Kernel, handles: &[Option<kernel::Handle>]
         let sync: Option<&kernel::KSynchronizationObject> = (&**object).into();
 
         if let Some(sync) = sync {
-            sync.wait(object, waker.clone(), &mut kctx.threads);
+            sync.wait(object, waker.clone(), &mut kctx.threads());
         } else {
             // This code path is bugged, disabled:
             unimplemented!("waitsync with invalid objects");
@@ -217,7 +218,7 @@ pub fn send_sync_request(kctx: &mut kernel::Kernel, handle: Option<kernel::Handl
         let rc = object.as_ref().unwrap();
         let waker = kctx.suspend_thread([rc].iter().map(|rc| rc.clone()), None, kernel::ThreadWaitType::WaitSync1);
 
-        if !sync.sync_request(waker, &mut kctx.threads) {
+        if !sync.sync_request(waker, &mut kctx.threads()) {
             panic!("TODO: Handle remote end disconnected")
         }
 
@@ -237,12 +238,12 @@ pub fn create_session_to_port(kctx: &mut kernel::Kernel, handle: Option<kernel::
         // Create session pair
         let (server, client) = crate::make_session_pair(kctx);
 
-        port.create_session_to_port(server, &mut kctx.threads);
+        port.create_session_to_port(server, &mut kctx.threads());
 
         let rc = object.as_ref().unwrap(); // TODO: Elide this clone by changing how wakers are done
         let waker = kctx.suspend_thread([rc].iter().map(|rc| rc.clone()), None, kernel::ThreadWaitType::WaitSync1);
 
-        port.wait(rc, waker, &mut kctx.threads);
+        port.wait(rc, waker, &mut kctx.threads());
 
         Ok((Some(Reschedule), kctx.new_handle(client.into_object())))
     } else {
@@ -257,7 +258,7 @@ pub fn accept_session(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>)
     let port: Option<&kernel::KServerPort> = object.as_ref().map(|rc| &**rc).and_then(|o| o.into());
 
     if let Some(port) = port {
-        match port.accept_session(&mut kctx.threads) {
+        match port.accept_session(&mut kctx.threads()) {
             Some(session) => {
                 Ok(Ok(kctx.new_handle(session.into_object())))
             },
@@ -265,7 +266,7 @@ pub fn accept_session(kctx: &mut kernel::Kernel, handle: Option<kernel::Handle>)
                 let rc = object.as_ref().unwrap(); // TODO: Elide this clone by changing how wakers are done
                 let waker = kctx.suspend_thread([rc].iter().map(|rc| rc.clone()), None, kernel::ThreadWaitType::WaitSync1);
 
-                port.wait(rc, waker, &mut kctx.threads);
+                port.wait(rc, waker, &mut kctx.threads());
 
                 Ok(Err(Reschedule))
             }

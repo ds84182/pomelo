@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::collections::VecDeque;
 
 use crate::kernel;
+use kernel::KernelExt;
 use kernel::object::*;
 
 pub fn make_port_pair(kctx: &mut kernel::Kernel) -> (kernel::KTypedObject<KServerPort>, kernel::KTypedObject<KClientPort>) {
